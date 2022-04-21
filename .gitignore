@@ -1,0 +1,12 @@
+*.o
+*.ll
+*.so
+valid_cfg.dot
+valid_cfg.pdf
+ProveTEE_[ut].[ch]
+VerifyTEE_[ut].[ch]
+VerifyTEE_att_[ut].[ch]
+bin/
+sgx-ra-tls/wolfssl-client
+sgx-ra-tls/wolfssl/libra-challenger.a
+

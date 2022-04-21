@@ -1,0 +1,1 @@
+Originally taken from https://github.com/sparkly9399/SGX-OpenSSL

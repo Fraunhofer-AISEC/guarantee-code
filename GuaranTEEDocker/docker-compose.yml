@@ -1,0 +1,29 @@
+version: '3'
+
+services:
+  aesm:
+    image: aesm
+    devices:
+      - /dev/sgx/enclave
+      - /dev/sgx/provision
+    volumes:
+      - aesmd-sock:/var/run/aesmd
+
+  sign-srv-hw:
+    image: sign-srv-hw
+    depends_on:
+      - aesm
+    devices:
+      - /dev/sgx/enclave
+    volumes:
+      - aesmd-sock:/var/run/aesmd
+    ports:
+      - 4433:4433
+      - 11111:11111
+    tty: true
+    stdin_open: true
+
+
+volumes:
+  aesmd-sock:
+    external: true

@@ -1,0 +1,563 @@
+diff --git a/pre-commit.sh b/pre-commit.sh
+index 9c76f4b30..86f1213cb 100755
+--- a/pre-commit.sh
++++ b/pre-commit.sh
+@@ -2,6 +2,7 @@
+ #
+ #
+ # Our "pre-commit" hook.
++exit 0
+ 
+ # save current config
+ echo "\n\nSaving current config\n\n"
+diff --git a/wolfcrypt/src/asn.c b/wolfcrypt/src/asn.c
+index 4ab62a189..6bb9d93e1 100644
+--- a/wolfcrypt/src/asn.c
++++ b/wolfcrypt/src/asn.c
+@@ -27,10 +27,10 @@ ASN.1 is a standard interface description language for defining data structures
+ that can be serialized and deserialized in a cross-platform way.
+ 
+ */
++#include <assert.h>
+ #ifdef HAVE_CONFIG_H
+     #include <config.h>
+ #endif
+-
+ #include <wolfssl/wolfcrypt/settings.h>
+ 
+ /*
+@@ -76,7 +76,7 @@ ASN Options:
+ #include <wolfssl/wolfcrypt/rc2.h>
+ #include <wolfssl/wolfcrypt/wc_encrypt.h>
+ #include <wolfssl/wolfcrypt/logging.h>
+-
++#include <wolfssl/wolfcrypt/wc_port.h>
+ #include <wolfssl/wolfcrypt/random.h>
+ #include <wolfssl/wolfcrypt/hash.h>
+ #ifdef NO_INLINE
+@@ -11977,7 +11977,10 @@ int wc_PemPubKeyToDer(const char* fileName,
+ /* USER RSA ifdef portions used instead of refactor in consideration for
+    possible fips build */
+ /* Write a public RSA key to output */
+-static int SetRsaPublicKey(byte* output, RsaKey* key,
++#if !defined(WOLFSSL_SGX_ATTESTATION)
++static
++#endif
++int SetRsaPublicKey(byte* output, RsaKey* key,
+                            int outLen, int with_header)
+ {
+     int  idx, nSz, eSz, seqSz, headSz = 0, bitStringSz = 0, algoSz = 0;
+@@ -12312,6 +12315,20 @@ typedef struct DerCert {
+     byte extKeyUsage[MAX_EXTKEYUSAGE_SZ]; /* Extended Key Usage extension */
+     byte certPolicies[MAX_CERTPOL_NB*MAX_CERTPOL_SZ]; /* Certificate Policies */
+ #endif
++#ifdef WOLFSSL_SGX_ATTESTATION
++    byte    iasSigCACert[2048];
++    byte    iasSigCert[2048];
++    byte    iasSig[2048];
++    byte    iasAttestationReport[2048];
++    byte    quote[2048];
++    byte    pckCrt[2048];
++    byte    pckSignChain[4096];
++    byte    tcbInfo[4096];
++    byte    tcbSignChain[4096];
++    byte    qeIdentity[1024];
++    byte    rootCaCrl[1024];
++    byte    pckCrl[1024];
++#endif
+ #ifdef WOLFSSL_CERT_REQ
+     byte attrib[MAX_ATTRIB_SZ];        /* Cert req attributes encoded */
+ #endif
+@@ -12334,6 +12351,21 @@ typedef struct DerCert {
+     int  extKeyUsageSz;                /* encoded ExtendedKeyUsage extension length */
+     int  certPoliciesSz;               /* encoded CertPolicies extension length*/
+ #endif
++#ifdef WOLFSSL_SGX_ATTESTATION
++    int iasSigCACertSz;
++    int iasSigCertSz;
++    int iasSigSz;
++    int iasAttestationReportSz;
++    int quoteSz;
++    int pckCrtSz;
++    int pckSignChainSz;
++    int tcbInfoSz;
++    int tcbSignChainSz;
++    int qeIdentitySz;
++    int rootCaCrlSz;
++    int pckCrlSz;
++#endif
++
+ #ifdef WOLFSSL_ALT_NAMES
+     int  altNamesSz;                   /* encoded AltNames extension length */
+ #endif
+@@ -13188,7 +13220,16 @@ static int SetKeyUsage(byte* output, word32 outSz, word16 input)
+                        ku, idx);
+ }
+ 
+-static int SetOjectIdValue(byte* output, word32 outSz, int* idx,
++#if !defined(WOLFSSL_SGX_ATTESTATION)
++static
++#endif
++int SetOjectIdValue(byte* output, word32 outSz, int* idx,
++                    const byte* oid, word32 oidSz);
++
++#if !defined(WOLFSSL_SGX_ATTESTATION)
++static
++#endif
++int SetOjectIdValue(byte* output, word32 outSz, int* idx,
+     const byte* oid, word32 oidSz)
+ {
+     /* verify room */
+@@ -13202,6 +13243,54 @@ static int SetOjectIdValue(byte* output, word32 outSz, int* idx,
+     return 0;
+ }
+ 
++#ifdef WOLFSSL_SGX_ATTESTATION
++static int SetSGXExt(byte* output, word32 outSz, const byte* oid, int oidSz, const byte *input, word32 length)
++{
++    byte ext_len[1 + MAX_LENGTH_SZ];
++    byte ext_enc_len[MAX_LENGTH_SZ];
++    byte oid_enc[16];
++    int idx = 0, ext_lenSz;
++    int oid_enc_lenSz = 0;
++    
++    if (output == NULL || input == NULL || oid == NULL)
++        return BAD_FUNC_ARG;
++
++    ext_lenSz = SetOctetString(length, ext_len);
++
++    SetLength(length + ext_lenSz, ext_enc_len);
++
++    SetOjectIdValue(oid_enc, sizeof(oid_enc), &oid_enc_lenSz, oid, oidSz);
++    
++    if (outSz < 3)
++        return BUFFER_E;
++
++    idx = SetSequence(length + oid_enc_lenSz + ext_lenSz,
++                      output);
++
++    if ((idx + length + oid_enc_lenSz + ext_lenSz) > outSz)
++       return BUFFER_E;
++
++    /* put oid */
++    XMEMCPY(output+idx, oid_enc, oid_enc_lenSz);
++    idx += oid_enc_lenSz;
++
++    /* put encoded len */
++    /* XMEMCPY(output+idx, ext_enc_len, ext_enc_lenSz); */
++    /* idx += ext_enc_lenSz; */
++
++    /* put octet header */
++    XMEMCPY(output+idx, ext_len, ext_lenSz);
++    idx += ext_lenSz;
++
++    /* put value */
++    XMEMCPY(output+idx, input, length);
++    idx += length;
++
++    return idx;
++}
++#endif
++
++
+ /* encode Extended Key Usage (RFC 5280 4.2.1.12), return total bytes written */
+ static int SetExtKeyUsage(Cert* cert, byte* output, word32 outSz, byte input)
+ {
+@@ -13761,17 +13850,31 @@ static int SetValidity(byte* output, int daysValid)
+ 
+     /* subtract 1 day of seconds for more compliance */
+     then = now - 86400;
++//#if !defined(WOLFSSL_SGX_ATTESTATION)
+     expandedTime = XGMTIME(&then, tmpTime);
+     if (expandedTime == NULL) {
+         WOLFSSL_MSG("XGMTIME failed");
+         return 0;   /* error */
+     }
+     localTime = *expandedTime;
++//#endif
+ 
+     /* adjust */
+     localTime.tm_year += 1900;
+     localTime.tm_mon +=    1;
+ 
++#ifdef WOLFSSL_SGX_ATTESTATION
++    /* To work around the abscence of a trusted time source in SGX, we
++       hard-code the certificate validity period. */
++    bzero(&localTime, sizeof(localTime));
++    localTime.tm_year = 2020;
++    localTime.tm_mday = 14;
++    localTime.tm_wday = 6;          /* 6 is Friday */
++    localTime.tm_mon  = 1;          /* 1 is February */
++    localTime.tm_hour = 9;
++#endif
++
++
+     SetTime(&localTime, before + beforeSz);
+     beforeSz += ASN_GEN_TIME_SZ;
+ 
+@@ -13780,17 +13883,27 @@ static int SetValidity(byte* output, int daysValid)
+ 
+     /* add daysValid of seconds */
+     then = now + (daysValid * (time_t)86400);
++//#if !defined(WOLFSSL_SGX_ATTESTATION)
+     expandedTime = XGMTIME(&then, tmpTime);
+     if (expandedTime == NULL) {
+         WOLFSSL_MSG("XGMTIME failed");
+         return 0;   /* error */
+     }
+     localTime = *expandedTime;
+-
++//#endif
+     /* adjust */
+     localTime.tm_year += 1900;
+     localTime.tm_mon  +=    1;
+ 
++#ifdef WOLFSSL_SGX_ATTESTATION
++    bzero(&localTime, sizeof(localTime));
++    localTime.tm_year = 2030;
++    localTime.tm_mday = 14;
++    localTime.tm_wday = 5;          /* 5 is Thursday */
++    localTime.tm_mon  = 1;          /* 1 is February */
++    localTime.tm_hour = 9;
++#endif
++
+     SetTime(&localTime, after + afterSz);
+     afterSz += ASN_GEN_TIME_SZ;
+ 
+@@ -14098,6 +14211,103 @@ static int EncodeCert(Cert* cert, DerCert* der, RsaKey* rsaKey, ecc_key* eccKey,
+         der->certPoliciesSz = 0;
+ #endif /* WOLFSSL_CERT_EXT */
+ 
++#ifdef WOLFSSL_SGX_ATTESTATION
++    if (cert->iasSigCACertSz > 0 &&
++        cert->iasSigCertSz > 0 &&
++        cert->iasSigSz > 0 &&
++        cert->iasAttestationReportSz > 0) {
++
++// 1.2.840.113741.1337.*
++#define OID(N) {0x2A, 0x86, 0x48, 0x86, 0xF8, 0x4D, 0x8A, 0x39, (N)}
++
++        unsigned char iasAttestationReportOid[] = OID(0x02);
++        unsigned char iasSigCACertOid[] = OID(0x03);
++        unsigned char iasSigCertOid[] = OID(0x04);
++        unsigned char iasSigOid[] = OID(0x05);
++
++        der->iasSigCACertSz = SetSGXExt(der->iasSigCACert, sizeof(der->iasSigCACert),
++                                        iasSigCACertOid, sizeof(iasSigCACertOid),
++                                        cert->iasSigCACert, cert->iasSigCACertSz);
++
++        der->iasSigCertSz = SetSGXExt(der->iasSigCert, sizeof(der->iasSigCert),
++                                      iasSigCertOid, sizeof(iasSigCertOid),
++                                      cert->iasSigCert, cert->iasSigCertSz);
++
++        der->iasSigSz = SetSGXExt(der->iasSig, sizeof(der->iasSig),
++                                  iasSigOid, sizeof(iasSigOid),
++                                  cert->iasSig, cert->iasSigSz);
++
++        der->iasAttestationReportSz = SetSGXExt(der->iasAttestationReport,
++                                                sizeof(der->iasAttestationReport),
++                                                iasAttestationReportOid,
++                                                sizeof(iasAttestationReportOid),
++                                                cert->iasAttestationReport,
++                                                cert->iasAttestationReportSz);
++
++        der->extensionsSz += der->iasAttestationReportSz +
++            der->iasSigCACertSz +
++            der->iasSigCertSz +
++            der->iasSigSz;
++    }
++
++    if (cert->quoteSz > 0 && cert->pckCrtSz > 0 && cert->pckSignChainSz > 0 &&
++        cert->tcbInfoSz > 0 && cert->tcbSignChainSz > 0 && cert->qeIdentitySz > 0 &&
++        cert->rootCaCrlSz > 0 && cert->pckCrlSz > 0) {
++
++        const unsigned char quoteOid[] = OID(0x06);
++        der->quoteSz = SetSGXExt(der->quote, sizeof(der->quote),
++                                 quoteOid, sizeof(quoteOid),
++                                 cert->quote, cert->quoteSz);
++        assert(der->quoteSz > 0);
++
++        const unsigned char pckCrtOid[] = OID(0x07);
++        der->pckCrtSz = SetSGXExt(der->pckCrt, sizeof(der->pckCrt),
++                                 pckCrtOid, sizeof(pckCrtOid),
++                                 cert->pckCrt, cert->pckCrtSz);
++        assert(der->pckCrtSz > 0);
++
++        const unsigned char pckSignChainOid[] = OID(0x08);
++        der->pckSignChainSz = SetSGXExt(der->pckSignChain, sizeof(der->pckSignChain),
++                                 pckSignChainOid, sizeof(pckSignChainOid),
++                                 cert->pckSignChain, cert->pckSignChainSz);
++        assert(der->pckSignChainSz > 0);
++
++        const unsigned char tcbInfoOid[] = OID(0x09);
++        der->tcbInfoSz = SetSGXExt(der->tcbInfo, sizeof(der->tcbInfo),
++                                 tcbInfoOid, sizeof(tcbInfoOid),
++                                 cert->tcbInfo, cert->tcbInfoSz);
++        assert(der->tcbInfoSz > 0);
++
++        const unsigned char tcbSignChainOid[] = OID(0x0a);
++        der->tcbSignChainSz = SetSGXExt(der->tcbSignChain, sizeof(der->tcbSignChain),
++                                 tcbSignChainOid, sizeof(tcbSignChainOid),
++                                 cert->tcbSignChain, cert->tcbSignChainSz);
++       assert(der->tcbSignChainSz > 0);
++
++       const unsigned char qeIdentityOid[] = OID(0x0b);
++        der->qeIdentitySz = SetSGXExt(der->qeIdentity, sizeof(der->qeIdentity),
++                                 qeIdentityOid, sizeof(qeIdentityOid),
++                                 cert->qeIdentity, cert->qeIdentitySz);
++        assert(der->qeIdentitySz > 0);
++
++        const unsigned char rootCaCrlOid[] = OID(0x0c);
++       der->rootCaCrlSz = SetSGXExt(der->rootCaCrl, sizeof(der->rootCaCrl),
++                                 rootCaCrlOid, sizeof(rootCaCrlOid),
++                                 cert->rootCaCrl, cert->rootCaCrlSz);
++        assert(der->rootCaCrlSz > 0);
++
++        const unsigned char pckCrlOid[] = OID(0x0d);
++        der->pckCrlSz = SetSGXExt(der->pckCrl, sizeof(der->pckCrl),
++                                 pckCrlOid, sizeof(pckCrlOid),
++                                 cert->pckCrl, cert->pckCrlSz);
++        assert(der->pckCrlSz > 0);
++
++        der->extensionsSz += der->quoteSz + der->pckCrtSz + der->pckSignChainSz +
++            der->tcbInfoSz + der->tcbSignChainSz + der->qeIdentitySz + der->rootCaCrlSz +
++            der->pckCrlSz;
++}
++#endif // WOLFSSL_SGX_ATTESTATION
++ 
+     /* put extensions */
+     if (der->extensionsSz > 0) {
+ 
+@@ -14174,6 +14384,89 @@ static int EncodeCert(Cert* cert, DerCert* der, RsaKey* rsaKey, ecc_key* eccKey,
+                 return EXTENSIONS_E;
+         }
+ #endif /* WOLFSSL_CERT_EXT */
++
++#ifdef WOLFSSL_SGX_ATTESTATION
++        if (der->iasSigCACertSz && der->iasSigCertSz &&
++            der->iasSigSz && der->iasAttestationReportSz) {
++
++            ret = SetExtensions(der->extensions, sizeof(der->extensions),
++                                &der->extensionsSz,
++                                der->iasAttestationReport, der->iasAttestationReportSz);
++            if (ret <= 0)
++                return EXTENSIONS_E;
++
++            ret = SetExtensions(der->extensions, sizeof(der->extensions),
++                                &der->extensionsSz,
++                                der->iasSigCACert, der->iasSigCACertSz);
++            if (ret <= 0)
++                return EXTENSIONS_E;
++
++            ret = SetExtensions(der->extensions, sizeof(der->extensions),
++                                &der->extensionsSz,
++                                der->iasSigCert, der->iasSigCertSz);
++            if (ret <= 0)
++                return EXTENSIONS_E;
++
++            ret = SetExtensions(der->extensions, sizeof(der->extensions),
++                                &der->extensionsSz,
++                                der->iasSig, der->iasSigSz);
++            if (ret <= 0)
++                return EXTENSIONS_E;
++        }
++
++        if (der->quoteSz > 0 && der->pckCrtSz > 0 && der->pckSignChainSz > 0 &&
++            der->tcbInfoSz > 0 && der->tcbSignChainSz > 0 && der->qeIdentitySz > 0 &&
++            der->rootCaCrlSz > 0 && der->pckCrlSz > 0) {
++
++            ret = SetExtensions(der->extensions, sizeof(der->extensions),
++                                &der->extensionsSz,
++                                der->quote, der->quoteSz);
++            if (ret <= 0)
++                return EXTENSIONS_E;
++
++            ret = SetExtensions(der->extensions, sizeof(der->extensions),
++                                &der->extensionsSz,
++                                der->pckCrt, der->pckCrtSz);
++            if (ret <= 0)
++                return EXTENSIONS_E;
++
++            ret = SetExtensions(der->extensions, sizeof(der->extensions),
++                                &der->extensionsSz,
++                                der->pckSignChain, der->pckSignChainSz);
++            if (ret <= 0)
++                return EXTENSIONS_E;
++
++            ret = SetExtensions(der->extensions, sizeof(der->extensions),
++                                &der->extensionsSz,
++                                der->tcbInfo, der->tcbInfoSz);
++            if (ret <= 0)
++                return EXTENSIONS_E;
++
++            ret = SetExtensions(der->extensions, sizeof(der->extensions),
++                                &der->extensionsSz,
++                                der->tcbSignChain, der->tcbSignChainSz);
++            if (ret <= 0)
++                return EXTENSIONS_E;
++            
++            ret = SetExtensions(der->extensions, sizeof(der->extensions),
++                                &der->extensionsSz,
++                                der->qeIdentity, der->qeIdentitySz);
++            if (ret <= 0)
++                return EXTENSIONS_E;
++            ret = SetExtensions(der->extensions, sizeof(der->extensions),
++                                &der->extensionsSz,
++                                der->rootCaCrl, der->rootCaCrlSz);
++            if (ret <= 0)
++                return EXTENSIONS_E;
++
++            ret = SetExtensions(der->extensions, sizeof(der->extensions),
++                                &der->extensionsSz,
++                                der->pckCrl, der->pckCrlSz);
++            if (ret <= 0)
++                return EXTENSIONS_E;
++}
++#endif
++
+     }
+ 
+     der->total = der->versionSz + der->serialSz + der->sigAlgoSz +
+diff --git a/wolfssl/internal.h b/wolfssl/internal.h
+index bfdb605c8..1168c4b72 100644
+--- a/wolfssl/internal.h
++++ b/wolfssl/internal.h
+@@ -1605,7 +1605,7 @@ enum Misc {
+ 
+ /* max size of a handshake message, currently set to the certificate */
+ #ifndef MAX_HANDSHAKE_SZ
+-    #define MAX_HANDSHAKE_SZ MAX_CERTIFICATE_SZ
++    #define MAX_HANDSHAKE_SZ ((MAX_CERTIFICATE_SZ) * 4)
+ #endif
+ 
+ #ifndef SESSION_TICKET_LEN
+diff --git a/wolfssl/wolfcrypt/asn_public.h b/wolfssl/wolfcrypt/asn_public.h
+index 695d48c3d..e59848d4c 100644
+--- a/wolfssl/wolfcrypt/asn_public.h
++++ b/wolfssl/wolfcrypt/asn_public.h
+@@ -348,6 +348,32 @@ typedef struct Cert {
+     char    certPolicies[CTC_MAX_CERTPOL_NB][CTC_MAX_CERTPOL_SZ];
+     word16  certPoliciesNb;              /* Number of Cert Policy */
+ #endif
++#ifdef WOLFSSL_SGX_ATTESTATION
++    byte    iasSigCACert[2048];
++    int     iasSigCACertSz;
++    byte    iasSigCert[2048];
++    int     iasSigCertSz;
++    byte    iasSig[2048];
++    int     iasSigSz;
++    byte    iasAttestationReport[2048];
++    int     iasAttestationReportSz;
++    byte    quote[2048];
++    int     quoteSz;
++    byte    pckCrt[2048];
++    int     pckCrtSz;
++    byte    pckSignChain[4096];
++    int     pckSignChainSz;
++    byte    tcbInfo[4096];
++    int     tcbInfoSz;
++    byte    tcbSignChain[4096];
++    int     tcbSignChainSz;
++    byte    qeIdentity[1024];
++    int     qeIdentitySz;
++    byte    rootCaCrl[1024];
++    int     rootCaCrlSz;
++    byte    pckCrl[1024];
++    int     pckCrlSz;
++#endif
+ #if defined(WOLFSSL_CERT_EXT) || defined(OPENSSL_EXTRA) || \
+     defined(WOLFSSL_CERT_REQ)
+     byte     issRaw[sizeof(CertName)];   /* raw issuer info */
+@@ -636,6 +662,10 @@ WOLFSSL_API int wc_CreateEncryptedPKCS8Key(byte*, word32, byte*, word32*,
+ WOLFSSL_API int wc_GetTime(void* timePtr, word32 timeSize);
+ #endif
+ 
++#ifdef WOLFSSL_SGX_ATTESTATION
++WOLFSSL_API int SetRsaPublicKey(byte* output, RsaKey* key, int outLen, int with_header);
++#endif
++
+ #ifdef WOLFSSL_ENCRYPTED_KEYS
+     WOLFSSL_API int wc_EncryptedInfoGet(EncryptedInfo* info,
+         const char* cipherInfo);
+diff --git a/wolfssl/wolfcrypt/settings.h b/wolfssl/wolfcrypt/settings.h
+index e6e6550ac..8df10264d 100644
+--- a/wolfssl/wolfcrypt/settings.h
++++ b/wolfssl/wolfcrypt/settings.h
+@@ -1737,7 +1737,9 @@ extern void uITRON4_free(void *p) ;
+     #define ECC_TIMING_RESISTANT
+     #define TFM_TIMING_RESISTANT
+     #define SINGLE_THREADED
++#if !defined(WOLFSSL_SGX_ATTESTATION)
+     #define NO_ASN_TIME /* can not use headers such as windows.h */
++#endif
+     #define HAVE_AESGCM
+     #define USE_CERT_BUFFERS_2048
+     #define USE_FAST_MATH
+diff --git a/wolfssl/wolfcrypt/wc_port.h b/wolfssl/wolfcrypt/wc_port.h
+index ca71bf7d9..440ef33ee 100644
+--- a/wolfssl/wolfcrypt/wc_port.h
++++ b/wolfssl/wolfcrypt/wc_port.h
+@@ -929,17 +929,18 @@ WOLFSSL_API int wolfCrypt_Cleanup(void);
+ 
+     /* if struct tm is not defined in WINCE SDK */
+     #ifndef _TM_DEFINED
+-        struct tm {
+-            int tm_sec;     /* seconds */
+-            int tm_min;     /* minutes */
+-            int tm_hour;    /* hours */
+-            int tm_mday;    /* day of month (month specific) */
+-            int tm_mon;     /* month */
+-            int tm_year;    /* year */
+-            int tm_wday;    /* day of week (out of 1-7)*/
+-            int tm_yday;    /* day of year (out of 365) */
+-            int tm_isdst;   /* is it daylight savings */
+-            };
++    	#include <time.h> // [Alina, to avoid redefinition error during VerifyTEE compilation]
++        //struct tm {
++        //    int tm_sec;     /* seconds */
++        //    int tm_min;     /* minutes */
++        //    int tm_hour;    /* hours */
++        //    int tm_mday;    /* day of month (month specific) */
++        //    int tm_mon;     /* month */
++        //   int tm_year;    /* year */
++        //    int tm_wday;    /* day of week (out of 1-7)*/
++        //    int tm_yday;    /* day of year (out of 365) */
++        //    int tm_isdst;   /* is it daylight savings */
++        //    };
+             #define _TM_DEFINED
+     #endif
+ 
+@@ -1053,19 +1054,20 @@ WOLFSSL_API int wolfCrypt_Cleanup(void);
+ 
+ /* wolf struct tm and time_t */
+ #if defined(USE_WOLF_TM)
+-    struct tm {
+-        int  tm_sec;     /* seconds after the minute [0-60] */
+-        int  tm_min;     /* minutes after the hour [0-59] */
+-        int  tm_hour;    /* hours since midnight [0-23] */
+-        int  tm_mday;    /* day of the month [1-31] */
+-        int  tm_mon;     /* months since January [0-11] */
+-        int  tm_year;    /* years since 1900 */
+-        int  tm_wday;    /* days since Sunday [0-6] */
+-        int  tm_yday;    /* days since January 1 [0-365] */
+-        int  tm_isdst;   /* Daylight Savings Time flag */
+-        long tm_gmtoff;  /* offset from CUT in seconds */
+-        char *tm_zone;   /* timezone abbreviation */
+-    };
++    #include <time.h> // [Alina, to avoid redefinition error during VerifyTEE compilation]
++    //struct tm {
++    //    int  tm_sec;     /* seconds after the minute [0-60] */
++    //    int  tm_min;     /* minutes after the hour [0-59] */
++    //    int  tm_hour;    /* hours since midnight [0-23] */
++    //    int  tm_mday;    /* day of the month [1-31] */
++    //    int  tm_mon;     /* months since January [0-11] */
++    //    int  tm_year;    /* years since 1900 */
++    //    int  tm_wday;    /* days since Sunday [0-6] */
++    //    int  tm_yday;    /* days since January 1 [0-365] */
++    //    int  tm_isdst;   /* Daylight Savings Time flag */
++    //    long tm_gmtoff;  /* offset from CUT in seconds */
++    //    char *tm_zone;   /* timezone abbreviation */
++    //};
+ #endif /* USE_WOLF_TM */
+ #if defined(USE_WOLF_TIME_T)
+     typedef long time_t;

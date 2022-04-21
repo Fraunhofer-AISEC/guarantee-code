@@ -1,0 +1,31 @@
+/*
+ *  Copyright (C) 2022 Fraunhofer AISEC
+ *  Authors: Benedikt Kopf <benedikt.kopf@aisec.fraunhofer.de>
+ *
+ *  VerifyTEE.edl
+ *
+ *  Enclave interface of the VerifyTEE without attestation
+ *
+ *  All Rights Reserved.
+ */
+
+enclave {
+    include "time.h"
+
+    from "sgx_tstdc.edl" import *;
+    from "sgx_tstdc.edl" import sgx_thread_wait_untrusted_event_ocall, sgx_thread_set_untrusted_event_ocall, sgx_thread_setwait_untrusted_events_ocall, sgx_thread_set_multiple_untrusted_events_ocall;
+    trusted{
+        public void ecall_init_verify_tee(uintptr_t shared_mem_ptr);
+        public void ecall_print_graph(int fd);
+        public void ecall_print_log(int fd);
+        public void ecall_kill_analyzer_thread();
+        public void ecall_start_analyzer_thread();
+    };
+
+    untrusted {
+        int ocall_print_string([in, string]const char *str);
+        time_t ocall_time([out]time_t *tloc);
+        int ocall_sgx_write(int fd, [in, size=n]const void *buf, int n);
+        void ocall_sgx_exit(int e);
+    };
+};

@@ -1,0 +1,58 @@
+/*
+ *  Copyright (C) 2022 Fraunhofer AISEC
+ *  Authors: Benedikt Kopf <benedikt.kopf@aisec.fraunhofer.de>
+ *
+ *  VerifyTEE_att.edl
+ *
+ *  Enclave interface of the VerifyTEE with attestation enabled
+ *
+ *  All Rights Reserved.
+ */
+
+
+enclave {
+    include "wolfssl/ssl.h"
+    include "wolfssl/wolfcrypt/settings.h"
+    include "wolfssl/wolfcrypt/types.h"
+
+    include "wolfcrypt/test/test.h"
+    include "wolfcrypt/benchmark/benchmark.h"
+
+    from "ra_tls.edl" import *;
+    from "sgx_tstdc.edl" import *;
+
+    from "sgx_tstdc.edl" import sgx_thread_wait_untrusted_event_ocall, sgx_thread_set_untrusted_event_ocall, sgx_thread_setwait_untrusted_events_ocall, sgx_thread_set_multiple_untrusted_events_ocall;
+    trusted{
+        public void ecall_init_verify_tee(uintptr_t shared_mem_ptr);
+        public void ecall_print_graph(int fd);
+        public void ecall_print_log(int fd);
+        public void ecall_kill_analyzer_thread();
+        public void ecall_start_analyzer_thread();
+
+        public int enc_wolfSSL_Init(void);
+        public void enc_wolfSSL_Debugging_ON(void);
+        public void enc_wolfSSL_Debugging_OFF(void);
+        public WOLFSSL_METHOD* enc_wolfTLSv1_2_server_method(void);
+        public WOLFSSL_CTX* enc_wolfSSL_CTX_new([user_check] WOLFSSL_METHOD* method);
+        public WOLFSSL* enc_wolfSSL_new([user_check] WOLFSSL_CTX* ctx);
+        public int enc_wolfSSL_set_fd([user_check]WOLFSSL* ssl, int fd);
+        public void enc_wolfSSL_free([user_check]WOLFSSL* ssl);
+        public void enc_wolfSSL_CTX_free([user_check]WOLFSSL_CTX* ctx);
+        public int enc_wolfSSL_Cleanup(void);
+		public int enc_handle_connection([user_check]WOLFSSL* ssl);
+
+        public void enc_create_key_and_x509([user_check]WOLFSSL_CTX* ctx);
+    };
+
+    untrusted {
+        int ocall_print_string([in, string]const char *str);
+        time_t ocall_time([out]time_t *tloc);
+        int ocall_sgx_write(int fd, [in, size=n]const void *buf, int n);
+        void ocall_sgx_exit(int e);
+
+        void ocall_current_time([out] double* time);
+        void ocall_low_res_time([out] int* time);
+        long int ocall_recv(int sockfd, [out, size=len] void *buf, size_t len, int flags) propagate_errno;
+        long int ocall_send(int sockfd, [in, size=len] const void *buf, size_t len, int flags) propagate_errno;
+    };
+};
