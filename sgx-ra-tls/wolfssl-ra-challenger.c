@@ -238,6 +238,27 @@ int verify_enclave_quote_status
         return 0;
     }
 #endif
+#ifdef SGX_CONFIGURATION_NEEDED
+    const char* status_config_needed = "CONFIGURATION_NEEDED\"";
+    if (0 == strncmp(p_begin, status_config_needed, strlen(status_config_needed))) {
+        printf("WARNING: isvEnclaveQuoteStatus is CONFIGURATION_NEEDED\n");
+        return 0;
+    }
+#endif
+#ifdef SGX_SW_HARDENING_NEEDED
+    const char* status_sw_hardening_needed = "SW_HARDENING_NEEDED\"";
+    if (0 == strncmp(p_begin, status_sw_hardening_needed, strlen(status_sw_hardening_needed))) {
+        printf("WARNING: isvEnclaveQuoteStatus is SW_HARDENING_NEEDED\n");
+        return 0;
+    }
+#endif
+#ifdef SGX_CONFIGURATION_AND_SW_HARDENING_NEEDED
+    const char* status_config_and_sw_hardening_needed = "CONFIGURATION_AND_SW_HARDENING_NEEDED\"";
+    if (0 == strncmp(p_begin, status_config_and_sw_hardening_needed, strlen(status_config_and_sw_hardening_needed))) {
+        printf("WARNING: isvEnclaveQuoteStatus is CONFIGURATION_AND_SW_HARDENING_NEEDED\n");
+        return 0;
+    }
+#endif
     return 1;
 }
 

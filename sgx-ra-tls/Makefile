@@ -7,6 +7,9 @@ CFLAGS+=-std=gnu99 -I. -I$(SGX_SDK)/include -Ideps/local/include $(SGX_DCAP_INC)
 CFLAGSERRORS=-Wall -Wextra -Wwrite-strings -Wlogical-op -Wshadow
 CFLAGS+=$(CFLAGSERRORS) -g -O0 -DWOLFSSL_SGX_ATTESTATION -DWOLFSSL_CERT_EXT # -DDEBUG -DDYNAMIC_RSA
 CFLAGS+=-DSGX_GROUP_OUT_OF_DATE
+CFLAGS+=-DSGX_CONFIGURATION_NEEDED
+CFLAGS+=-DSGX_SW_HARDENING_NEEDED
+CFLAGS+=-DSGX_CONFIGURATION_AND_SW_HARDENING_NEEDED
 
 # On Ubuntu 18.04 executables are built as position independent
 # executables (PIE) by default. Position independent executables give
